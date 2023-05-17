@@ -23,6 +23,10 @@
 package version
 
 import (
+	"errors"
+	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -30,10 +34,26 @@ import (
 // 	version string
 // }
 
+// split a version in parts,
+// v is the version string and is assumed to have been validated
 func splitVersion(v string) []string {
+
+	// first, we identify if there is a release part with '-'
+	idxRel := strings.Index(v, "-")
+	if idxRel == -1 {
+		idxRel = len(v)
+		rel = ""
+	} else {
+		rel = v[idxRel+1:]
+	}
+	splitVer := strings.Split(v[:idxRel], ".")
+	splitVer = append(splitVer, rel)
+
+	return splitVer
 
 }
 
+// Validate a version string to see if it conforms to the regular format
 func validate(v string) bool {
 	// a typical version number is like 8.0.29-21.3
 	// 8.0.29 is the base version
@@ -44,24 +64,54 @@ func validate(v string) bool {
 	// -21.3 is the build info
 	// The build info can have letters but no punctuation other than [.-]
 
-	dashPos := strings.Index(v, '-')
+	re := regexp.MustCompile("^([58])\x2e([0-9])\x2e([0-9][0-9]|[0-9]$|[0-9][0-9]-.*$|[0-9]-.*$)")
+	return re.MatchString(v)
 
 }
 
-func Major(v string) uint16 {
-	return 1
+func Major(v string) (string, error) {
+	if !validate(v) {
+		return "", errors.New("Invalid version format")
+	}
+
+	vParts := splitVersion(v)
+
+	return vParts[0], nil
 }
 
-func Minor(v string) uint8 {
-	return 1
+func Minor(v string) (string, error) {
+	if !validate(v) {
+		return "", errors.New("Invalid version format")
+	}
+
+	vParts := splitVersion(v)
+
+	return vParts[1] + "." + vParts[2], nil
+
 }
 
-func Build(v string) string {
-	return "1"
+func Release(v string) (string, error) {
+	if !validate(v) {
+		return "", errors.New("Invalid version format")
+	}
+
+	vParts := splitVersion(v)
+	return "-" + vParts[3], nil
 }
 
-func Normalized(v string) uint32 {
-	return 1
+// Returns the normalized form of the version number to ease comparison
+func Normalized(v string) (string, error) {
+
+	if !validate(v) {
+		return "", errors.New("Invalid version format")
+	}
+
+	vParts := splitVersion(v)
+	digit1, _ := strconv.Atoi(vParts[0])
+	digit2, _ := strconv.Atoi(vParts[1])
+	digit3, _ := strconv.Atoi(vParts[2])
+
+	return fmt.Sprintf("%d%02d%02d", digit1, digit2, digit3), nil
 }
 
 func Compare(v1 string, v2 string) int8 {
