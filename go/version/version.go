@@ -37,7 +37,7 @@ import (
 // split a version in parts,
 // v is the version string and is assumed to have been validated
 func splitVersion(v string) []string {
-
+	rel := ""
 	// first, we identify if there is a release part with '-'
 	idxRel := strings.Index(v, "-")
 	if idxRel == -1 {
@@ -54,7 +54,7 @@ func splitVersion(v string) []string {
 }
 
 // Validate a version string to see if it conforms to the regular format
-func validate(v string) bool {
+func Validate(v string) bool {
 	// a typical version number is like 8.0.29-21.3
 	// 8.0.29 is the base version
 	// The base version is made of digits and two '.'
@@ -64,14 +64,15 @@ func validate(v string) bool {
 	// -21.3 is the build info
 	// The build info can have letters but no punctuation other than [.-]
 
-	re := regexp.MustCompile("^([58])\x2e([0-9])\x2e([0-9][0-9]|[0-9]$|[0-9][0-9]-.*$|[0-9]-.*$)")
+	re := regexp.MustCompile("^([58])\x2e([0-9])\x2e([0-9][0-9]$|[0-9]$|[0-9][0-9]-.*$|[0-9]-.*$)")
 	return re.MatchString(v)
 
 }
 
 func Major(v string) (string, error) {
-	if !validate(v) {
-		return "", errors.New("Invalid version format")
+	if !Validate(v) {
+		err := errors.New("invalid version format")
+		return "", err
 	}
 
 	vParts := splitVersion(v)
@@ -80,8 +81,9 @@ func Major(v string) (string, error) {
 }
 
 func Minor(v string) (string, error) {
-	if !validate(v) {
-		return "", errors.New("Invalid version format")
+	if !Validate(v) {
+
+		return "", errors.New("invalid version format")
 	}
 
 	vParts := splitVersion(v)
@@ -91,8 +93,8 @@ func Minor(v string) (string, error) {
 }
 
 func Release(v string) (string, error) {
-	if !validate(v) {
-		return "", errors.New("Invalid version format")
+	if !Validate(v) {
+		return "", errors.New("invalid version format")
 	}
 
 	vParts := splitVersion(v)
@@ -100,10 +102,11 @@ func Release(v string) (string, error) {
 }
 
 // Returns the normalized form of the version number to ease comparison
+// 8.0.30 becomes 80030
 func Normalized(v string) (string, error) {
 
-	if !validate(v) {
-		return "", errors.New("Invalid version format")
+	if !Validate(v) {
+		return "", errors.New("invalid version format")
 	}
 
 	vParts := splitVersion(v)
@@ -114,7 +117,31 @@ func Normalized(v string) (string, error) {
 	return fmt.Sprintf("%d%02d%02d", digit1, digit2, digit3), nil
 }
 
-func Compare(v1 string, v2 string) int8 {
+// Compare two version strings
+// -1: v1 is older than v2
+//  0: v1 is same as v2
+//  1: v1 is younger than v2
+func Compare(v1 string, v2 string) (int8, error) {
 
-	return 0
+	if !Validate(v1) {
+		return 0, errors.New("invalid version format")
+	}
+
+	if !Validate(v2) {
+		return 0, errors.New("invalid version format")
+	}
+
+	normV1, _ := Normalized(v1)
+	normV2, _ := Normalized(v2)
+
+	if normV1 < normV2 {
+		return -1, nil
+	}
+
+	if normV1 > normV2 {
+		return 1, nil
+	}
+
+	return 0, nil
+
 }
