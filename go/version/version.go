@@ -30,10 +30,6 @@ import (
 	"strings"
 )
 
-// type MysqlVersion struct {
-// 	version string
-// }
-
 // split a version in parts,
 // v is the version string and is assumed to have been validated
 func splitVersion(v string) []string {
