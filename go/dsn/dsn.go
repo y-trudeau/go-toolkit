@@ -61,13 +61,14 @@ type Dsn struct {
 	Password     string
 	Port         uint16
 	Socket       string
+	Table        string
 	User         string
 }
 
 func Validate(dsnValue string) error {
 	params := strings.Split(dsnValue, ",")
 
-	re := regexp.MustCompile(`^(A|D|F|h|L|p|P|S|u){1}$`)
+	re := regexp.MustCompile(`^(A|D|F|h|L|p|P|S|t|u){1}$`)
 
 	for i := 0; i < len(params); i++ {
 		// Each parameter must have an '=' sign (maybe more than one but al least one)
@@ -119,6 +120,7 @@ func (D *Dsn) init() {
 	D.Password = ""
 	D.Port = 3306
 	D.Socket = ""
+	D.Table = ""
 	D.User = ""
 }
 
@@ -160,6 +162,8 @@ func (D *Dsn) Parse(dsnValue string) error {
 			D.Password = pSplit[1]
 		case "S":
 			D.Socket = pSplit[1]
+		case "t":
+			D.Table = pSplit[1]
 		case "u":
 			D.User = pSplit[1]
 		}

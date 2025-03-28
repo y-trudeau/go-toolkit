@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/y-trudeau/go-toolkit/go/dsn"
@@ -88,7 +89,9 @@ type Configuration struct {
 	SleepCoef      float64       // Calculate --sleep as a multiple of the last SELECT time
 	Source         string        // DSN specifying the table to archive from.
 	Statistics     bool          // Collect and print timing statistics.
-	Stop           string        // Stop running instances by creating the sentinel file.
+	Stop           bool          // Stop running instances by creating the exit sentinel file.
+	Pause          bool          // Pause running instances by creating the Pause sentinel file.
+	UnPause        bool          // Unpause running instances by removing the Pause sentinel file.
 	TxnSize        int           // Number of rows per transaction (default = 1).
 	Version        bool          // Print the version and exit.
 	Where          string        // WHERE clause to limit which rows to archive (required).
@@ -112,12 +115,12 @@ func (config *Configuration) init() {
 	flag.IntVar(&Config.CheckTime, "check-interval", 1, `If --check-slave-lag is given, this defines how long the tool pauses (in seconds) each time it discovers
    that a slave is lagging. This check is performed every 100 rows.`)
 	flag.StringVar(&Config.CheckSlaveLag, "check-slave-lag", "", `Pause archiving until the specified DSN's slave lag is less than --max-lag.
-   Multiple DSN can be provided when seperated by ';'`)
+   Multiple DSN can be provided when seperated by ';'`) 
 	flag.StringVar(&Config.Columns, "columns", "", "Comma-separated list of columns to archive.")
 	flag.BoolVar(&Config.CommitEach, "commit-each", false, "Commit each set of fetched and archived rows (disables --txn-size).")
 	flag.StringVar(&Config.Dest, "dest", "", "DSN specifying the table to archive to.")
 	flag.BoolVar(&Config.DryRun, "dry-run", false, "Print queries and exit without doing anything.")
-	flag.StringVar(&Config.File, "file", "", "File to archive to, with DATE_FORMAT()-like formatting.")
+	flag.StringVar(&Config.File, "file", "", "File to archive to, with DATE_FORMAT()-like formatting, support ['%d','%H','%i','%m','%s','%Y'].")
 	flag.BoolVar(&Config.ForUpdate, "for-update", false, "Adds the FOR UPDATE modifier to SELECT statements.")
 	flag.BoolVar(&Config.Header, "header", false, "Print column header at top of --file.")
 	flag.BoolVar(&Config.Ignore, "ignore", false, "Use IGNORE for INSERT statements.")
@@ -155,12 +158,13 @@ func (config *Configuration) init() {
 	flag.Float64Var(&Config.SleepCoef, "sleep-coef", 0.0, "Calculate --sleep as a multiple of the last SELECT time")
 	flag.StringVar(&Config.Source, "source", "", "DSN specifying the table to archive from.")
 	flag.BoolVar(&Config.Statistics, "statistics", false, "Collect and print timing statistics.")
-	flag.StringVar(&Config.Stop, "stop", "", "Stop running instances by creating the sentinel file.")
+	flag.BoolVar(&Config.Exit, "exit", false, "Stop running instances by creating the exit sentinel file.")
+	flag.BoolVar(&Config.Pause, "pause", false, "Pause running instances by creating the pause sentinel file.")
+	flag.BoolVar(&Config.UnPause, "unpause", false, "Unpause running instances by removing the pause sentinel file.")
 	flag.IntVar(&Config.TxnSize, "txn-size", 1, "Number of rows per transaction (default = 1).")
 	flag.BoolVar(&Config.Version, "version", false, "Show version and exit.")
 	flag.StringVar(&Config.Where, "where", "", "WHERE clause to limit which rows to archive (required).")
 	flag.BoolVar(&Config.WhyQuit, "why-quit", false, "Print reason for exiting unless rows exhausted.")
-
 }
 
 func (config *Configuration) Print() {
@@ -212,7 +216,9 @@ func (config *Configuration) Print() {
 	fmt.Printf("sleep-coef is set to: %v\n", config.SleepCoef)
 	fmt.Printf("source is set to: '%v'\n", config.Source)
 	fmt.Printf("statistics is set to: %v\n", config.Statistics)
-	fmt.Printf("stop is set to: '%v'\n", config.Statistics)
+	fmt.Printf("exit is set to: %v\n", config.Stop)
+	fmt.Printf("pause is set to: %v\n", config.Pause)
+	fmt.Printf("unpause is set to: %v\n", config.UnPause)
 	fmt.Printf("txn-size is set to: %v\n", config.TxnSize)
 	fmt.Printf("version is set to: %v\n", config.Version)
 	fmt.Printf("where is set to: '%v'\n", config.Where)
@@ -247,11 +253,26 @@ func (config *Configuration) Validate() error {
 		if dsn.Validate(config.Source) != nil {
 			return fmt.Errorf("Source is not a valid DSN: '%v'",config.Source)
 		}
+		d := Dsn{}
+		d.Parse{config.Source}
+		if ! len(d.Table) > 0 {
+			return fmt.Errorf("Source DSN requires a 't' (table) element: '%v'",config.Source)
+		}
+		if ! len(d.Database) > 0 {
+			return fmt.Errorf("Source DSN requires a 'D' (table) element: '%v'",config.Source)
+		}
+		
+	} else {
+		return fmt.Errorf("'source' DSN must be set")
 	}
 
 	if len(config.Dest) > 0 {
 		if dsn.Validate(config.Dest) != nil {
 			return fmt.Errorf("Dest is not a valid DSN: '%v'",config.Dest)
+		}
+
+		if config.Dest == config.Source {
+			return fmt.Errorf("'source': '%v' and 'dest': '%v' DSNs are the identical, they must be different",config.Source, config.Dest)
 		}
 	}
 
@@ -269,9 +290,15 @@ func (config *Configuration) Validate() error {
 		}
 
 	}
+
+	// exit, pause and unpause are mutually exclusive
+	if (config.Stop && config.Pause) || (config.Stop && config.UnPause) || (config.UnPause && config.Pause) {
+		return fmt.Errorf("The options 'Stop', 'Pause' and 'UnPause' are mutually exclusive")
+	}
+
 	// where must be set
 	if len(config.Where) == 0 {
-		return fmt.Errorf("'Where' must be set")
+		return fmt.Errorf("'where' must be set")
 	}
 	
 	// integers all need to be positive (no negative values makes sense)
@@ -294,6 +321,11 @@ func (config *Configuration) Validate() error {
 		return fmt.Errorf("'txn-size' must be zero positive")
 	}
 
+	if config.BulkInsert && len(config.Dest) == 0 {
+		return fmt.Errorf("'bulk-insert' is meaningless without a destination")
+	}
+
+	if config.BulkDelete && config.BulkDeleteLimit
 	// All good so nil
 	return nil
 }
@@ -363,4 +395,87 @@ Purge (delete) orphan rows from child table:
 		fmt.Printf("Error validating the command line arguments: %v", err)
 		os.Exit(1)
 	}
+
+	// First things first: if --stop was given, create the exit sentinel file.
+	if Config.Stop && len([]run(Config.ExitSentinel)) > 0 {
+		_, err := os.Stat(Config.ExitSentinel)
+		if os.IsNotExist(err) {
+	        file, err := os.Create(Config.ExitSentinel)
+			if err != nil {
+            	log.Fatal(err)
+        	}
+        	defer file.Close()
+			fmt.Printf("Successfully created exit sentinel file: '%v'\n",Config.ExitSentinel)
+		} else {
+			fmt.Printf("Exit sentinel file already exists: '%v'\n",Config.ExitSentinel)
+			os.Exit(1)
+		}
+	}
+
+	// if --pause was given, create the pause sentinel file.
+	if Config.Pause && len([]run(Config.PauseSentinel)) > 0 {
+		_, err := os.Stat(Config.PauseSentinel)
+		if os.IsNotExist(err) {
+	        file, err := os.Create(Config.PauseSentinel)
+			if err != nil {
+            	log.Fatal(err)
+        	}
+        	defer file.Close()
+			fmt.Printf("Successfully created the pause sentinel file: '%v'\n",Config.PauseSentinel)
+		} else {
+			fmt.Printf("Pause sentinel file already exists: '%v'\n",Config.PauseSentinel)
+			os.Exit(1)
+		}
+	}
+
+	// if --unpause was given, remove the pause sentinel file.
+	if Config.UnPause && len([]run(Config.PauseSentinel)) > 0 {
+		_, err := os.Stat(Config.PauseSentinel)
+		if ! os.IsNotExist(err) {
+	        err := os.Remove(Config.PauseSentinel)
+			if err != nil {
+            	log.Fatal(err)
+        	}
+        	defer file.Close()
+			fmt.Printf("Successfully removed the pause sentinel file: '%v'\n",Config.PauseSentinel)
+		} else {
+			fmt.Printf("Pause sentinel file didn't already exists: '%v'\n",Config.PauseSentinel)
+			os.Exit(1)
+		}
+	}
+
+	// Generate a filename with sprintf-like formatting codes.
+	if len(Config.File) > 0 {
+		t := time.Now()
+		fileComponent := make(map[string]String)
+		fileComponent["d"] = strconv.Itoa(t.Day()) // Day on month
+		fileComponent["H"] = strconv.Itoa(t.Hour()) // Current hour
+		fileComponent["i"] = strconv.Itoa(t.Minute()) // Current minute
+		fileComponent["m"] = strconv.Itoa(int(t.Month())) // Current month
+		fileComponent["s"] = strconv.Itoa(t.Second()) // Current second
+		fileComponent["Y"] = strconv.Itoa(t.Year()) // Current Year
+		fileComponent["D"] = ""
+		fileComponent["t"] = ""
+		if len(Config.Source) > 0 {
+			// Since the configuration is validated, we know for sure
+			// There is a Database and table defined
+			d := Dsn{}
+			d.Parse{Config.Source}
+			fileComponent["D"] = d.Database 
+			fileComponent["t"] = d.table 
+		}
+		needPaddingTags := [5]string{"d","H","i","m","s"}
+		for _, tag := range needPaddingTags {
+			// if the len(fileComponent[tag]) is 1, need to prefix by '0'
+			if len(fileComponent[tag]) = 1 {
+				fileComponent[tag] = "0" + fileComponent[tag]
+			}
+		}
+		replaceTags := [8]string{"d","H","i","m","s","Y","D","t"}
+		for _, tag := range replaceTags {
+			re := regexp.MustCompile("%"+tag)
+			re.ReplaceAllString(Config.File,fileComponent[tag])
+		}
+	}
+
 }
