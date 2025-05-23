@@ -100,6 +100,7 @@ type Configuration struct {
 }
 
 var Config Configuration
+var Statistics map[string]int64
 
 func (config *Configuration) init() {
 	defaultZeroTime, _ := time.ParseDuration("0")
@@ -325,7 +326,18 @@ func (config *Configuration) Validate() error {
 		return fmt.Errorf("'bulk-insert' is meaningless without a destination")
 	}
 
-	if config.BulkDelete && config.BulkDeleteLimit
+	if config.BulkDelete && config.BulkDeleteLimit < 2 {
+        return fmt.Errorf("'bulk-delete' is meaningless with 'bulk-delete-limit 1'")
+    }
+
+	if config.Purge && config.NoDelete {
+        return fmt.Errorf("'purge' and 'no-delete' are mutualy exclusive")
+    }
+
+	if config.BulkDelete && config.BulkInsert {
+        config.CommitEach = 1
+    }
+
 	// All good so nil
 	return nil
 }
@@ -334,6 +346,23 @@ func (config *Configuration) Validate() error {
 func (config *Configuration) Usage() error {
 
 	return nil
+}
+
+func GenStats(name string, f func()) {
+    if config.Statistics {
+        start := time.Now().UnixMilli()
+        cnt, ok := stats[name + "_count"]
+        if ok {
+            // Do something
+            stats[name + "_count"] = cnt + 1
+        } else {
+            stats[name + "_count"] = 1
+        }
+        f()
+        stats[name + "_time"] = (time.Now().UnixMilli() - start)
+    } else {
+        f()
+    }
 }
 
 func main() {
@@ -396,8 +425,11 @@ Purge (delete) orphan rows from child table:
 		os.Exit(1)
 	}
 
+    // Initialize the Statistics Map
+    Statistics = make(map[string]int64)    
+
 	// First things first: if --stop was given, create the exit sentinel file.
-	if Config.Stop && len([]run(Config.ExitSentinel)) > 0 {
+	if Config.Stop && len(Config.ExitSentinel) > 0 {
 		_, err := os.Stat(Config.ExitSentinel)
 		if os.IsNotExist(err) {
 	        file, err := os.Create(Config.ExitSentinel)
@@ -413,7 +445,7 @@ Purge (delete) orphan rows from child table:
 	}
 
 	// if --pause was given, create the pause sentinel file.
-	if Config.Pause && len([]run(Config.PauseSentinel)) > 0 {
+	if Config.Pause && len(Config.PauseSentinel) > 0 {
 		_, err := os.Stat(Config.PauseSentinel)
 		if os.IsNotExist(err) {
 	        file, err := os.Create(Config.PauseSentinel)
@@ -429,7 +461,7 @@ Purge (delete) orphan rows from child table:
 	}
 
 	// if --unpause was given, remove the pause sentinel file.
-	if Config.UnPause && len([]run(Config.PauseSentinel)) > 0 {
+	if Config.UnPause && len(Config.PauseSentinel) > 0 {
 		_, err := os.Stat(Config.PauseSentinel)
 		if ! os.IsNotExist(err) {
 	        err := os.Remove(Config.PauseSentinel)
@@ -477,5 +509,25 @@ Purge (delete) orphan rows from child table:
 			re.ReplaceAllString(Config.File,fileComponent[tag])
 		}
 	}
+
+    // Could add Daemonize/forking option but not really needed (TODO)
+
+    // Check if --pid is set and if it exists
+    if len(Config.Pid) > 0 {
+        _, err := os.Stat(Config.Pid)
+        if os.IsNotExist(err) {
+            file, err := os.Create(Config.Pid)
+            if err != nil {
+                log.Fatal(err)
+            }
+            defer file.Close()
+            p := os.Getpid()
+            n3, err := file.WriteString(fmt.Sprintf("%s\n",p))
+        } else {
+            fmt.Printf("Pid file exists: '%v'\n",Config.Pid)
+            os.Exit(1)
+        }
+    }
+
 
 }

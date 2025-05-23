@@ -46,29 +46,33 @@
 package dsn
 
 import (
+    "database/sql"
 	"fmt"
+    "net/url"
 	"regexp"
 	"strconv"
 	"strings"
+    _ "github.com/go-sql-driver/mysql"
 )
 
 type Dsn struct {
 	Charset      string
 	Database     string
-	DefaultsFile string
 	Host         string
-	Local        bool
 	Password     string
 	Port         uint16
+    SetVars      string
 	Socket       string
+    Ssl          bool
 	Table        string
 	User         string
+    Dbh          DB*    
 }
 
 func Validate(dsnValue string) error {
 	params := strings.Split(dsnValue, ",")
 
-	re := regexp.MustCompile(`^(A|D|F|h|L|p|P|S|t|u){1}$`)
+	re := regexp.MustCompile(`^(A|D|h|L|p|P|S|V|t|u|s){1}$`)
 
 	for i := 0; i < len(params); i++ {
 		// Each parameter must have an '=' sign (maybe more than one but al least one)
@@ -112,16 +116,18 @@ func Validate(dsnValue string) error {
 }
 
 func (D *Dsn) init() {
-	D.Charset = "utf8"
+	D.Charset = "utf8mb4"
 	D.Database = ""
-	D.DefaultsFile = ""
 	D.Host = ""
 	D.Local = false
 	D.Password = ""
 	D.Port = 3306
 	D.Socket = ""
+    D.Ssl = 0
 	D.Table = ""
 	D.User = ""
+    D.Dbh = nil
+    D.SetVars = ""
 }
 
 func (D *Dsn) Parse(dsnValue string) error {
@@ -143,8 +149,6 @@ func (D *Dsn) Parse(dsnValue string) error {
 			D.Charset = pSplit[1]
 		case "D":
 			D.Database = pSplit[1]
-		case "F":
-			D.DefaultsFile = pSplit[1]
 		case "h":
 			D.Host = pSplit[1]
 		case "L":
@@ -155,13 +159,26 @@ func (D *Dsn) Parse(dsnValue string) error {
 			}
 
 		case "P":
-			p, _ := strconv.Atoi(pSplit[1])
+			p, e := strconv.Atoi(pSplit[1])
+	        if e != nil {
+		        return fmt.Errorf("Port value '%v' does not convert to integer. %v",pSplit[1],e)
+	        }
 			D.Port = uint16(p)
 
 		case "p":
 			D.Password = pSplit[1]
 		case "S":
 			D.Socket = pSplit[1]
+            // if there is a socket file, it has to exists and be available.
+            if _, e := os.Stat(D.Socket); e != nil {
+                 return fmt.Errorf("Socket file '%v' does not exist or is not accessible", D.Socket)
+            }
+        case "V":
+            // need to parse the variables which could includes quotes, equals and commas :(
+            // javascript: res = str.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
+
+        case "s":
+            D.Ssl
 		case "t":
 			D.Table = pSplit[1]
 		case "u":
@@ -170,3 +187,80 @@ func (D *Dsn) Parse(dsnValue string) error {
 	}
 	return nil
 }
+
+func (D *Dsn) setVars(vars string) error {
+    // Very crude validation, just checking if there is an '='
+    if strings.Count(vars, "=") == 0 {
+        return fmt.Errorf("The variable provided: '%v' is missing an '='", vars)
+    }
+    D.SetVars = vars
+    return nil
+}
+
+func (D *Dsn) genUri() string {
+    D.Parse()
+    Uri := ""
+    
+    // First let's establish if the protocol used is tcp or socket
+    if len(D.User) > 0 {
+        Uri = D.User
+        if len(D.Password) > 0 {
+            Uri = Uri + ":" + D.Password
+        }
+    }
+    Uri = Uri + "@"
+
+    // Is a socket file defined?
+    if len(D.Socket) > 0 {
+        Uri = Uri + "unix(" + D.Socket + ")"
+    } else {
+        Uri = Uri + "tcp("
+        if len(D.Host) > 0 {
+            Uri = Uri + D.Host + ":" + D.Port
+        } else {
+            Uri = Uri + "localhost:" + D.Port
+        }
+    }
+    Uri = Uri + ")/"
+    
+    if len(D.Database) > 0 {
+        Uri = Uri + D.Database
+    }
+    
+//    if len(D.SetVars) {
+//        Uri = Uri + "?" + strings.Replace(strings.Replace(D.SetVars," ","",-1),",","&",-1)
+//    }
+// A => charset
+// 
+    return Uri
+}
+
+func (D *Dsn) getConn() *DB, error {
+    if D.DBh == nil {
+        D.Dbh, err := sql.Open("mysql", D.genUri())
+        if err != nil {
+            return nil, err
+        }
+        defer D.Dbh.Close()
+        D.Dbh.SetMaxOpenConns(1)
+        vars := strings.Split(D.SetVars, ",")
+        for i := 0; i < len(vars); i++ {
+            _, err = db.Query("SET " + vars[i] + ";")
+            if err != nil {
+                return nil, err
+            }
+        }
+    } else {
+        if err := D.Dbh.Ping(); err != nil {
+            D.Dbh.Close()
+            D.Dbh, err := sql.Open("mysql", D.genUri())
+            if err != nil {
+                return nil, err
+            }
+            defer D.Dbh.Close()
+            D.Dbh.SetMaxOpenConns(1)
+        }        
+    }
+    return D.Dbh, nil
+}
+
