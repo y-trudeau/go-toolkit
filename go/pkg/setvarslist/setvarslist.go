@@ -49,7 +49,7 @@ func regexp2FindAllString(re *regexp2.Regexp, s string) []string {
 	return matches
 }
 
-func getVars(vars string) []string {
+func Getvars(vars string) []string {
 //    re := regexp2.MustCompile(`Your RE2-compatible pattern`, regexp2.RE2)
 //,               ','
 //(?=             look ahead to see if there is:
