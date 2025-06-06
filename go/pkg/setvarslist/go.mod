@@ -1,4 +1,4 @@
-module go-toolkit/go/setVarsList
+module go-toolkit/go/setvarslist
 
 go 1.24.3
 
