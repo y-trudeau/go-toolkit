@@ -21,7 +21,7 @@
 
 */
 
-package setVarsList 
+package setvarslist
 
 import (
 	"fmt"

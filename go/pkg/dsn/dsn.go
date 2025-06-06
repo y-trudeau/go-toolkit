@@ -66,7 +66,7 @@ type Dsn struct {
     Ssl          bool
 	Table        string
 	User         string
-    Dbh          DB*    
+    Dbh          *sql.DB
 }
 
 func Validate(dsnValue string) error {
@@ -101,16 +101,6 @@ func Validate(dsnValue string) error {
 				return fmt.Errorf("Port value should be between 1 and 65535, value submitted was '%v'", pSplit[1])
 			}
 		}
-
-		// Testing if port is numeric
-		if pSplit[0] == "L" {
-			rep := regexp.MustCompile(`^(0|1){1}$`)
-
-			if !rep.MatchString(pSplit[1]) {
-				return fmt.Errorf("Local value must be 0 or 1, received: '%v'", pSplit[1])
-			}
-		}
-
 	}
 	return nil
 }
@@ -119,7 +109,6 @@ func (D *Dsn) init() {
 	D.Charset = "utf8mb4"
 	D.Database = ""
 	D.Host = ""
-	D.Local = false
 	D.Password = ""
 	D.Port = 3306
 	D.Socket = ""
@@ -151,13 +140,6 @@ func (D *Dsn) Parse(dsnValue string) error {
 			D.Database = pSplit[1]
 		case "h":
 			D.Host = pSplit[1]
-		case "L":
-			if pSplit[1] == "0" {
-				D.Local = false
-			} else {
-				D.Local = true
-			}
-
 		case "P":
 			p, e := strconv.Atoi(pSplit[1])
 	        if e != nil {
@@ -200,7 +182,7 @@ func (D *Dsn) setVars(vars string) error {
 func (D *Dsn) genUri() string {
     D.Parse()
     Uri := ""
-    
+
     // First let's establish if the protocol used is tcp or socket
     if len(D.User) > 0 {
         Uri = D.User
@@ -222,11 +204,11 @@ func (D *Dsn) genUri() string {
         }
     }
     Uri = Uri + ")/"
-    
+
     if len(D.Database) > 0 {
         Uri = Uri + D.Database
     }
-    
+
 //    if len(D.SetVars) {
 //        Uri = Uri + "?" + strings.Replace(strings.Replace(D.SetVars," ","",-1),",","&",-1)
 //    }
@@ -235,7 +217,7 @@ func (D *Dsn) genUri() string {
     return Uri
 }
 
-func (D *Dsn) getConn() *DB, error {
+func (D *Dsn) getConn() (*DB, error) {
     if D.DBh == nil {
         D.Dbh, err := sql.Open("mysql", D.genUri())
         if err != nil {
@@ -259,7 +241,7 @@ func (D *Dsn) getConn() *DB, error {
             }
             defer D.Dbh.Close()
             D.Dbh.SetMaxOpenConns(1)
-        }        
+        }
     }
     return D.Dbh, nil
 }

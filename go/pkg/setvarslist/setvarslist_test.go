@@ -1,0 +1,48 @@
+package setvarslist
+
+import (
+	"testing"
+    "setVarsList"
+)
+
+func TestgetVars(t *testing.T) {
+	{
+		// Empty
+		v := ""
+		vars := setVarsList.getVars(v)
+        if len(vars) != 0 {
+            t.Errorf("Returned non-empty array")
+        }
+	}
+	{
+		// single value
+		v := "A"
+		vars := setVarsList.getVars(v)
+        if len(vars) != 1 {
+            t.Errorf("Returned an array that do not have one element")
+        }
+        if vars[0] != "A" {
+            t.Errorf("Incorrect value of the first element")
+        }
+	}
+	{
+		// multiple value
+		v := "1,2,3,4"
+		vars := setVarsList.getVars(v)
+        if len(vars) != 4 {
+            t.Errorf("Returned an array that do not have four elements")
+        }
+	}
+	{
+		// Commas in value
+		v := `A="B,C,D"`
+		vars := setVarsList.getVars(v)
+        if len(vars) != 1 {
+            t.Errorf("Returned an array that do not have one element")
+        }
+        if vars[0] != `A="B,C,D"` {
+            t.Errorf("Incorrect value of the first element")
+        }
+	}
+}
+
