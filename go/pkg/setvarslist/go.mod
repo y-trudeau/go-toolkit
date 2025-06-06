@@ -1,4 +1,4 @@
-module go-toolkit/go/setvarslist
+module github.com/y-trudeau/go-toolkit/go/pkg/setvarslist 
 
 go 1.24.3
 
