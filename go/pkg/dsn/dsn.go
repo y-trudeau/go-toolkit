@@ -49,6 +49,7 @@ import (
     "database/sql"
 	"fmt"
     "net/url"
+    "os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -160,7 +161,7 @@ func (D *Dsn) Parse(dsnValue string) error {
             // javascript: res = str.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
 
         case "s":
-            D.Ssl
+            D.Ssl = true
 		case "t":
 			D.Table = pSplit[1]
 		case "u":
@@ -180,7 +181,6 @@ func (D *Dsn) setVars(vars string) error {
 }
 
 func (D *Dsn) genUri() string {
-    D.Parse()
     Uri := ""
 
     // First let's establish if the protocol used is tcp or socket
@@ -217,7 +217,7 @@ func (D *Dsn) genUri() string {
     return Uri
 }
 
-func (D *Dsn) getConn() (*DB, error) {
+func (D *Dsn) Getconn() (*DB, error) {
     if D.DBh == nil {
         D.Dbh, err := sql.Open("mysql", D.genUri())
         if err != nil {

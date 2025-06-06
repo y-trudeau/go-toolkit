@@ -5,11 +5,11 @@ import (
     "github.com/y-trudeau/go-toolkit/go/pkg/setvarslist"
 )
 
-func TestgetVars(t *testing.T) {
+func TestGetvars(t *testing.T) {
 	{
 		// Empty
 		v := ""
-		vars := setvarslist.getVars(v)
+		vars := setvarslist.Getvars(v)
         if len(vars) != 0 {
             t.Errorf("Returned non-empty array")
         }
@@ -17,7 +17,7 @@ func TestgetVars(t *testing.T) {
 	{
 		// single value
 		v := "A"
-		vars := setvarslist.getVars(v)
+		vars := setvarslist.Getvars(v)
         if len(vars) != 1 {
             t.Errorf("Returned an array that do not have one element")
         }
@@ -28,7 +28,7 @@ func TestgetVars(t *testing.T) {
 	{
 		// multiple value
 		v := "1,2,3,4"
-		vars := setvarslist.getVars(v)
+		vars := setvarslist.Getvars(v)
         if len(vars) != 4 {
             t.Errorf("Returned an array that do not have four elements")
         }
@@ -36,7 +36,7 @@ func TestgetVars(t *testing.T) {
 	{
 		// Commas in value
 		v := `A="B,C,D"`
-		vars := setvarslist.getVars(v)
+		vars := setvarslist.Getvars(v)
         if len(vars) != 1 {
             t.Errorf("Returned an array that do not have one element")
         }

@@ -3,7 +3,7 @@ package dsn
 import (
 	"testing"
 
-	"github.com/y-trudeau/go-toolkit/go/dsn"
+	"github.com/y-trudeau/go-toolkit/go/pkg/dsn"
 )
 
 func TestValidate(t *testing.T) {
