@@ -17,9 +17,9 @@ func TestValidate(t *testing.T) {
 	}
 	{
 		// no '='
-		v := "L"
+		v := "P"
 		err := dsn.Validate(v)
-		if err.Error() != "Parameter 'L' is missing an '='" {
+		if err.Error() != "Parameter 'P' is missing an '='" {
 			t.Errorf("Invalid detection of missing '=' in dsn parameter, got: '%v'", err.Error())
 		}
 	}
@@ -48,38 +48,22 @@ func TestValidate(t *testing.T) {
 		}
 
 	}
-	{
-		// L not 0 or 1
-		v := "L=2"
-		err := dsn.Validate(v)
-		if err.Error() != "Local value must be 0 or 1, received: '2'" {
-			t.Errorf("Invalid detection of wrong local value, got: '%v'", err.Error())
-		}
-
-	}
-
 }
 
 func TestInit(t *testing.T) {
 	{
 		// Validate the default value
-		d := Dsn{}
-		d.init()
+		d := dsn.Dsn{}
+		d.Parse("")  // init is private, instead we call Parse with empty string
 
-		if d.Charset != "utf8" {
+		if d.Charset != "utf8mb4" {
 			t.Errorf("init didn't set the correct default Charset, got '%v'", d.Charset)
 		}
 		if d.Database != "" {
 			t.Errorf("init didn't set the correct default Database, got '%v'", d.Database)
 		}
-		if d.DefaultsFile != "" {
-			t.Errorf("init didn't set the correct default DefaultsFile, got '%v'", d.DefaultsFile)
-		}
 		if d.Host != "" {
 			t.Errorf("init didn't set the correct default Host, got '%v'", d.Host)
-		}
-		if d.Local != false {
-			t.Errorf("init didn't set the correct default Local, got '%v'", d.Local)
 		}
 		if d.Password != "" {
 			t.Errorf("init didn't set the correct default Password, got '%v'", d.Password)
@@ -87,11 +71,20 @@ func TestInit(t *testing.T) {
 		if d.Port != 3306 {
 			t.Errorf("init didn't set the correct default Port, got '%v'", d.Port)
 		}
+		if d.Ssl != true {
+			t.Errorf("init didn't set the correct default Ssl, got '%v'", d.Ssl)
+		}
 		if d.Socket != "" {
 			t.Errorf("init didn't set the correct default Socket, got '%v'", d.Socket)
 		}
 		if d.User != "" {
 			t.Errorf("init didn't set the correct default User, got '%v'", d.User)
+		}
+		if d.Dbh != nil {
+			t.Errorf("init didn't set the correct default Dbh, got '%v'", d.Dbh)
+		}
+		if d.Setvars != "" {
+			t.Errorf("init didn't set the correct default Setvars, got '%v'", d.Dbh)
 		}
 	}
 
@@ -100,7 +93,7 @@ func TestInit(t *testing.T) {
 func TestParse(t *testing.T) {
 	{
 		// Test Charset parsing
-		d := Dsn{}
+		d := dsn.Dsn{}
 		d.Parse("A=utf8mb4")
 
 		if d.Charset != "utf8mb4" {
@@ -109,7 +102,7 @@ func TestParse(t *testing.T) {
 	}
 	{
 		// Test Database parsing
-		d := Dsn{}
+		d := dsn.Dsn{}
 		d.Parse("D=testing")
 
 		if d.Database != "testing" {
@@ -117,17 +110,8 @@ func TestParse(t *testing.T) {
 		}
 	}
 	{
-		// Test DefaultsFile parsing
-		d := Dsn{}
-		d.Parse("F=/testing/my.cnf")
-
-		if d.DefaultsFile != "/testing/my.cnf" {
-			t.Errorf("Parse didn't set the correct DefaultsFile, got '%v'", d.DefaultsFile)
-		}
-	}
-	{
 		// Test Host parsing
-		d := Dsn{}
+		d := dsn.Dsn{}
 		d.Parse("h=127.0.0.1")
 
 		if d.Host != "127.0.0.1" {
@@ -135,17 +119,8 @@ func TestParse(t *testing.T) {
 		}
 	}
 	{
-		// Test Local parsing
-		d := Dsn{}
-		d.Parse("L=1")
-
-		if !d.Local {
-			t.Errorf("Parse didn't set the correct Local, got '%v'", d.Local)
-		}
-	}
-	{
 		// Test Password parsing
-		d := Dsn{}
+		d := dsn.Dsn{}
 		d.Parse("p=mypass")
 
 		if d.Password != "mypass" {
@@ -154,7 +129,7 @@ func TestParse(t *testing.T) {
 	}
 	{
 		// Test Port parsing
-		d := Dsn{}
+		d := dsn.Dsn{}
 		d.Parse("P=6033")
 
 		if d.Port != 6033 {
@@ -163,7 +138,7 @@ func TestParse(t *testing.T) {
 	}
 	{
 		// Test Socket parsing
-		d := Dsn{}
+		d := dsn.Dsn{}
 		d.Parse("S=/tmp/mysock.sock")
 
 		if d.Socket != "/tmp/mysock.sock" {
@@ -172,7 +147,7 @@ func TestParse(t *testing.T) {
 	}
 	{
 		// Test User parsing
-		d := Dsn{}
+		d := dsn.Dsn{}
 		d.Parse("u=myuser")
 
 		if d.User != "myuser" {
@@ -181,11 +156,11 @@ func TestParse(t *testing.T) {
 	}
 	{
 		// Test multiple params
-		d := Dsn{}
-		d.Parse("P=6033,u=myuser,L=1,S=/tmp/mysock.sock")
+		d := dsn.Dsn{}
+		d.Parse("P=6033,u=myuser,S=/tmp/mysock.sock")
 
-		if !(d.User == "myuser" && d.Port == 6033 && d.Local && d.Socket == "/tmp/mysock.sock") {
-			t.Errorf("Parse didn't processed correctly multiple parameters, got Port: '%v', User:'%v', Local: '%v', Socket: '%v'", d.Port, d.User, d.Local, d.Socket)
+		if !(d.User == "myuser" && d.Port == 6033 && d.Socket == "/tmp/mysock.sock") {
+			t.Errorf("Parse didn't processed correctly multiple parameters, got Port: '%v', User:'%v', Socket: '%v'", d.Port, d.User, d.Socket)
 		}
 	}
 

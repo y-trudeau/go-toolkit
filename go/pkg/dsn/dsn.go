@@ -47,26 +47,25 @@ package dsn
 
 import (
     "database/sql"
-	"fmt"
-    "net/url"
+    "fmt"
     "os"
-	"regexp"
-	"strconv"
-	"strings"
+    "regexp"
+    "strconv"
+    "strings"
     _ "github.com/go-sql-driver/mysql"
 )
 
 type Dsn struct {
-	Charset      string
-	Database     string
-	Host         string
-	Password     string
-	Port         uint16
-    SetVars      string
-	Socket       string
+    Charset      string
+    Database     string
+    Host         string
+    Password     string
+    Port         uint16
+    Setvars      string
+    Socket       string
     Ssl          bool
-	Table        string
-	User         string
+    Table        string
+    User         string
     Dbh          *sql.DB
 }
 
@@ -113,11 +112,11 @@ func (D *Dsn) init() {
 	D.Password = ""
 	D.Port = 3306
 	D.Socket = ""
-    D.Ssl = 0
+    D.Ssl = true 
 	D.Table = ""
 	D.User = ""
     D.Dbh = nil
-    D.SetVars = ""
+    D.Setvars = ""
 }
 
 func (D *Dsn) Parse(dsnValue string) error {
@@ -176,7 +175,7 @@ func (D *Dsn) setVars(vars string) error {
     if strings.Count(vars, "=") == 0 {
         return fmt.Errorf("The variable provided: '%v' is missing an '='", vars)
     }
-    D.SetVars = vars
+    D.Setvars = vars
     return nil
 }
 
@@ -198,9 +197,9 @@ func (D *Dsn) genUri() string {
     } else {
         Uri = Uri + "tcp("
         if len(D.Host) > 0 {
-            Uri = Uri + D.Host + ":" + D.Port
+            Uri = Uri + D.Host + ":" + strconv.Itoa(int(D.Port))
         } else {
-            Uri = Uri + "localhost:" + D.Port
+            Uri = Uri + "localhost:" + strconv.Itoa(int(D.Port))
         }
     }
     Uri = Uri + ")/"
@@ -209,33 +208,34 @@ func (D *Dsn) genUri() string {
         Uri = Uri + D.Database
     }
 
-//    if len(D.SetVars) {
-//        Uri = Uri + "?" + strings.Replace(strings.Replace(D.SetVars," ","",-1),",","&",-1)
+//    if len(D.Setvars) {
+//        Uri = Uri + "?" + strings.Replace(strings.Replace(D.Setvars," ","",-1),",","&",-1)
 //    }
 // A => charset
 // 
     return Uri
 }
 
-func (D *Dsn) Getconn() (*DB, error) {
-    if D.DBh == nil {
-        D.Dbh, err := sql.Open("mysql", D.genUri())
+func (D *Dsn) Getconn() (*sql.DB, error) {
+    var err error
+    if D.Dbh == nil {
+        D.Dbh, err = sql.Open("mysql", D.genUri())
         if err != nil {
             return nil, err
         }
         defer D.Dbh.Close()
         D.Dbh.SetMaxOpenConns(1)
-        vars := strings.Split(D.SetVars, ",")
+        vars := strings.Split(D.Setvars, ",")
         for i := 0; i < len(vars); i++ {
-            _, err = db.Query("SET " + vars[i] + ";")
+            _, err = D.Dbh.Query("SET " + vars[i] + ";")
             if err != nil {
                 return nil, err
             }
         }
     } else {
-        if err := D.Dbh.Ping(); err != nil {
+        if err = D.Dbh.Ping(); err != nil {
             D.Dbh.Close()
-            D.Dbh, err := sql.Open("mysql", D.genUri())
+            D.Dbh, err = sql.Open("mysql", D.genUri())
             if err != nil {
                 return nil, err
             }
