@@ -24,6 +24,8 @@ package quoter
 import (
     "regexp"
     "strings"
+
+    "github.com/y-trudeau/go-toolkit/go/pkg/debug"
 )
 
 // Backtick quotes values in backticks.
@@ -89,6 +91,8 @@ func Escapelike (like string) string {
 // Convert an array of string values to a string of quoted values
 // separated by commas
 func Serializelist(args []string) string {
+
+    debug.Printvar("Serializing", args)
     result := ""
     for _, el := range args {
         result = result + strings.ReplaceAll(strings.ReplaceAll(el,`,`,`\,`), `\N`, `\\N`) + ","
@@ -98,10 +102,13 @@ func Serializelist(args []string) string {
         result = strings.TrimRight(result,",")
     }
 
+    debut.Printvar("Serialized", result)
     return result
 }
 
 func Deserializelist(list string) []string {
+    debug.Printvar("Deserializing", list)
+
     var res []string
     re := regexp.MustCompile(`(?:[^\\,]|\\,)+`)
     matches := re.FindAllString(list, -1)
@@ -110,5 +117,6 @@ func Deserializelist(list string) []string {
         res = append(res,strings.ReplaceAll(strings.ReplaceAll(el,,`\,`,`,`), , `\\N`, `\N`))
     }
 
+    debug.Printvar("Deserialed", res)
     return res
 } 

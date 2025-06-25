@@ -27,7 +27,7 @@ import (
 )
 
 func isdebug() bool {
-    if os.Getenv("PTDEBUG") == 1 {
+    if os.Getenv("PTDEBUG") == "1" {
         return true
     } else {
         return false
