@@ -38,7 +38,7 @@ func Printvar(msg string, variable any) {
     if ! isdebug() {
         return
     }
-    fmt.Printf(os.Stderr,"%s: %v\n",msg, variable)
+    fmt.Fprintf(os.Stderr,"%s: %v\n",msg, variable)
 }
 
 // Print a string message
@@ -46,5 +46,5 @@ func Print(msg string) {
     if ! isdebug() {
         return
     }
-    fmt.Println(os.Stderr,msg)
+    fmt.Fprintln(os.Stderr,msg)
 }
