@@ -1,2 +1,4 @@
 github.com/y-trudeau/go-toolkit/go/pkg/debug v0.0.0-20250624192109-f3a1a42dcf5d h1:LTg15umDSCMf6y/txQUzzyX67ippkGNKP5JzoVByT60=
 github.com/y-trudeau/go-toolkit/go/pkg/debug v0.0.0-20250624192109-f3a1a42dcf5d/go.mod h1:Q7WEVJ0f4nq7J/QBgfRew5FweuZhdFDPcRTQckWxvtY=
+github.com/y-trudeau/go-toolkit/go/pkg/debug v0.0.0-20250625155247-5604a5fa587c h1:yQnVnOgVOazod6YWP7rI6gwAoOZGhXQwpayczAI2Xdk=
+github.com/y-trudeau/go-toolkit/go/pkg/debug v0.0.0-20250625155247-5604a5fa587c/go.mod h1:Q7WEVJ0f4nq7J/QBgfRew5FweuZhdFDPcRTQckWxvtY=

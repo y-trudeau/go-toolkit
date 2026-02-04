@@ -53,6 +53,8 @@ import (
     "strconv"
     "strings"
     _ "github.com/go-sql-driver/mysql"
+
+    "github.com/y-trudeau/go-toolkit/go/pkg/debug"
 )
 
 type Dsn struct {
@@ -106,17 +108,17 @@ func Validate(dsnValue string) error {
 }
 
 func (D *Dsn) init() {
-	D.Charset = "utf8mb4"
-	D.Database = ""
-	D.Host = ""
-	D.Password = ""
-	D.Port = 3306
-	D.Socket = ""
-    D.Ssl = true 
-	D.Table = ""
-	D.User = ""
+    D.Charset = "utf8mb4"
+    D.Database = ""
+    D.Host = ""
+    D.Password = ""
+    D.Port = 3306
+    D.Socket = ""
+    D.Ssl = true
+    D.Table = ""
+    D.User = ""
     D.Dbh = nil
-    D.Setvars = ""
+    D.Setvars = "parseTime=true"
 }
 
 func (D *Dsn) Parse(dsnValue string) error {
@@ -132,6 +134,7 @@ func (D *Dsn) Parse(dsnValue string) error {
 	for i := 0; i < len(params); i++ {
 		// we now split around '='
 		pSplit := strings.Split(params[i], "=")
+        debug.Print("Parsing :" + pSplit[0] + " = " + pSplit[1])
 
 		switch pSplit[0] {
 		case "A":
@@ -170,14 +173,14 @@ func (D *Dsn) Parse(dsnValue string) error {
 	return nil
 }
 
-func (D *Dsn) setVars(vars string) error {
-    // Very crude validation, just checking if there is an '='
-    if strings.Count(vars, "=") == 0 {
-        return fmt.Errorf("The variable provided: '%v' is missing an '='", vars)
-    }
-    D.Setvars = vars
-    return nil
-}
+//func (D *Dsn) setVars(vars string) error {
+//    // Very crude validation, just checking if there is an '='
+//    if strings.Count(vars, "=") == 0 {
+//        return fmt.Errorf("The variable provided: '%v' is missing an '='", vars)
+//    }
+//    D.Setvars = vars
+//    return nil
+//}
 
 func (D *Dsn) genUri() string {
     Uri := ""
@@ -208,39 +211,56 @@ func (D *Dsn) genUri() string {
         Uri = Uri + D.Database
     }
 
-//    if len(D.Setvars) {
-//        Uri = Uri + "?" + strings.Replace(strings.Replace(D.Setvars," ","",-1),",","&",-1)
-//    }
+    if len(D.Setvars) > 0 {
+        Uri = Uri + "?" + strings.Replace(strings.Replace(D.Setvars," ","",-1),",","&",-1)
+    }
 // A => charset
 // 
+    debug.Print("Generated Uri = '" + Uri + "'")
     return Uri
 }
 
 func (D *Dsn) Getconn() (*sql.DB, error) {
     var err error
     if D.Dbh == nil {
+        debug.Print("Creating a new connection to the database")
         D.Dbh, err = sql.Open("mysql", D.genUri())
         if err != nil {
             return nil, err
         }
-        defer D.Dbh.Close()
+        debug.Print("Connected to the database")
+        // defer D.Dbh.Close()
         D.Dbh.SetMaxOpenConns(1)
+
         vars := strings.Split(D.Setvars, ",")
-        for i := 0; i < len(vars); i++ {
+        for i := 0; i < len(vars)-1; i++ {
+            debug.Print("Setting variable '" + vars[i] + "'")
             _, err = D.Dbh.Query("SET " + vars[i] + ";")
             if err != nil {
                 return nil, err
             }
         }
     } else {
+        debug.Print("Reusing a connection to the database")
         if err = D.Dbh.Ping(); err != nil {
+            debug.Print("Connection to the database is down, reconnecting")
             D.Dbh.Close()
             D.Dbh, err = sql.Open("mysql", D.genUri())
             if err != nil {
                 return nil, err
             }
-            defer D.Dbh.Close()
+            debug.Print("Connected to the database")
+            // defer D.Dbh.Close()
             D.Dbh.SetMaxOpenConns(1)
+
+            vars := strings.Split(D.Setvars, ",")
+            for i := 0; i < len(vars)-1; i++ {
+                debug.Print("Setting variable '" + vars[i] + "'")
+                _, err = D.Dbh.Query("SET " + vars[i] + ";")
+                if err != nil {
+                    return nil, err
+                }
+            }
         }
     }
     return D.Dbh, nil

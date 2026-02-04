@@ -1,4 +1,4 @@
-module github.com/y-trudeau/go-toolkit/go/pkg/quoter
+module github.com/y-trudeau/go-toolkit/go/pkg/tableparser
 
 go 1.24.3
 

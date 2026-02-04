@@ -24,6 +24,7 @@ package quoter
 import (
     "regexp"
     "strings"
+    "database/sql"
 
     "github.com/y-trudeau/go-toolkit/go/pkg/debug"
 )
@@ -34,24 +35,24 @@ func Backtick(vals []string) string {
     re := regexp.MustCompile("`")
     retval := ""
     for _, el := range vals {
-        retval = retval + "`" + re.ReplaceAll([]byte(el), []byte("``")) + "`."
+        retval = retval + "`" + re.ReplaceAllString(el, "``") + "`."
     }
     return strings.TrimRight(retval,".")
 }
 
 // Quoteval quotes a value for use in a SQL statement.
 // Examples: undef = "NULL" and empty string = ''
-func Quoteval(val string, datatype string) string) {
+func Quoteval(val sql.NullString, datatype string) string {
     // is val NULL? 
-    if val == nil {
+    if ! val.Valid {
         return "NULL"
     }
 
     if datatype != "char" {
-        return val
+        return val.String
     }
 
-    return "'" + strings.ReplaceAll(strings.ReplaceAll(val,`\`,`\\`), "'", `\'`) + "'"
+    return "'" + strings.ReplaceAll(strings.ReplaceAll(val.String,`\`,`\\`), "'", `\'`) + "'"
 
 }
 
@@ -102,7 +103,7 @@ func Serializelist(args []string) string {
         result = strings.TrimRight(result,",")
     }
 
-    debut.Printvar("Serialized", result)
+    debug.Printvar("Serialized", result)
     return result
 }
 
@@ -114,9 +115,9 @@ func Deserializelist(list string) []string {
     matches := re.FindAllString(list, -1)
 
     for _, el := range matches {
-        res = append(res,strings.ReplaceAll(strings.ReplaceAll(el,,`\,`,`,`), , `\\N`, `\N`))
+        res = append(res,strings.ReplaceAll(strings.ReplaceAll(el,`\,`,`,`), `\\N`, `\N`))
     }
 
-    debug.Printvar("Deserialed", res)
+    debug.Printvar("Deserialized", res)
     return res
 } 
