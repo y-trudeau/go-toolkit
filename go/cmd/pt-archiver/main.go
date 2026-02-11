@@ -28,9 +28,12 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+    "strings"
 	"time"
 
 	"github.com/y-trudeau/go-toolkit/go/dsn"
+	"github.com/y-trudeau/go-toolkit/go/debug"
+	"github.com/y-trudeau/go-toolkit/go/quoter"
 )
 
 var bDebug = false
@@ -82,7 +85,6 @@ type Configuration struct {
 	PauseSentinel  string        // Pause if the file exists.
 	SlaveUser      string        // Sets the user to be used to connect to the slaves.
 	SlavePassword  string        // Sets the password to be used to connect to the slaves.
-	SetVars        string        // Set the MySQL variables in this comma-separated list of variable=value pairs.
 	ShareLock      bool          // Adds the LOCK IN SHARE MODE modifier to SELECT statements.
 	SkipFKChecks   bool          // Disables foreign key checks with SET FOREIGN_KEY_CHECKS=0.
 	SleepTime      time.Duration // Time to sleep between fetches in golang time.Duration format.
@@ -152,7 +154,6 @@ func (config *Configuration) init() {
 	flag.StringVar(&Config.PauseSentinel, "pause-sentinel", "", "Pause if the file exists.")
 	flag.StringVar(&Config.SlaveUser, "slave-user", "", "Sets the user to be used to connect to the slaves.")
 	flag.StringVar(&Config.SlavePassword, "slave-password", "", "Sets the password to be used to connect to the slaves.")
-	flag.StringVar(&Config.SetVars, "set-vars", "", "Set the MySQL variables in this comma-separated list of variable=value pairs.")
 	flag.BoolVar(&Config.ShareLock, "share-lock", false, "Adds the LOCK IN SHARE MODE modifier to SELECT statements.")
 	flag.BoolVar(&Config.SkipFKChecks, "skip-foreign-key-checks", false, "Disables foreign key checks with SET FOREIGN_KEY_CHECKS=0.")
 	flag.DurationVar(&Config.SleepTime, "sleep", defaultZeroTime, "Time to sleep between fetches in golang time.Duration format.")
@@ -210,7 +211,6 @@ func (config *Configuration) Print() {
 	fmt.Printf("run-time is set to: %v\n", config.RunTime)
 	fmt.Printf("slave-password is set to: '%v'\n", config.SlavePassword)
 	fmt.Printf("slave-user is set to: '%v'\n", config.SlaveUser)
-	fmt.Printf("set-vars is set to: '%v'\n", config.SetVars)
 	fmt.Printf("share-lock is set to: %v\n", config.ShareLock)
 	fmt.Printf("skip-foreign-key-checks is set to: %v\n", config.SkipFKChecks)
 	fmt.Printf("sleep is set to: %v\n", config.SleepTime)
@@ -262,7 +262,6 @@ func (config *Configuration) Validate() error {
 		if ! len(d.Database) > 0 {
 			return fmt.Errorf("Source DSN requires a 'D' (table) element: '%v'",config.Source)
 		}
-		
 	} else {
 		return fmt.Errorf("'source' DSN must be set")
 	}
@@ -281,15 +280,6 @@ func (config *Configuration) Validate() error {
 		if dsn.Validate(config.CheckSlaveLag) != nil {
 			return fmt.Errorf("CheckSlaveLag is not a valid DSN: '%v'",config.CheckSlaveLag)
 		}
-	}
-
-	// set-vars must be a comma separated list of 'variable1=value1,variable2='value2=123' pairs
-	if len(config.SetVars) > 0 {
-		re := regexp.MustCompile(`[a-z_]*=('[a-z_\-=, ]*'|[a-z]*),?`)
-		if !re.MatchString(config.SetVars) {
-			return fmt.Errorf("Incorrectly formatted 'set-vars', must match `[a-z_]*=('[a-z_\-=, ]*'|[a-z]*),?`")
-		}
-
 	}
 
 	// exit, pause and unpause are mutually exclusive
@@ -426,7 +416,7 @@ Purge (delete) orphan rows from child table:
 	}
 
     // Initialize the Statistics Map
-    Statistics = make(map[string]int64)    
+    Statistics = make(map[string]int64)
 
 	// First things first: if --stop was given, create the exit sentinel file.
 	if Config.Stop && len(Config.ExitSentinel) > 0 {
@@ -434,9 +424,9 @@ Purge (delete) orphan rows from child table:
 		if os.IsNotExist(err) {
 	        file, err := os.Create(Config.ExitSentinel)
 			if err != nil {
-            	log.Fatal(err)
-        	}
-        	defer file.Close()
+	            log.Fatal(err)
+	        }
+	        defer file.Close()
 			fmt.Printf("Successfully created exit sentinel file: '%v'\n",Config.ExitSentinel)
 		} else {
 			fmt.Printf("Exit sentinel file already exists: '%v'\n",Config.ExitSentinel)
@@ -450,9 +440,9 @@ Purge (delete) orphan rows from child table:
 		if os.IsNotExist(err) {
 	        file, err := os.Create(Config.PauseSentinel)
 			if err != nil {
-            	log.Fatal(err)
-        	}
-        	defer file.Close()
+	            log.Fatal(err)
+	        }
+            defer file.Close()
 			fmt.Printf("Successfully created the pause sentinel file: '%v'\n",Config.PauseSentinel)
 		} else {
 			fmt.Printf("Pause sentinel file already exists: '%v'\n",Config.PauseSentinel)
@@ -466,9 +456,9 @@ Purge (delete) orphan rows from child table:
 		if ! os.IsNotExist(err) {
 	        err := os.Remove(Config.PauseSentinel)
 			if err != nil {
-            	log.Fatal(err)
-        	}
-        	defer file.Close()
+	            log.Fatal(err)
+	        }
+	        defer file.Close()
 			fmt.Printf("Successfully removed the pause sentinel file: '%v'\n",Config.PauseSentinel)
 		} else {
 			fmt.Printf("Pause sentinel file didn't already exists: '%v'\n",Config.PauseSentinel)
@@ -493,8 +483,8 @@ Purge (delete) orphan rows from child table:
 			// There is a Database and table defined
 			d := Dsn{}
 			d.Parse{Config.Source}
-			fileComponent["D"] = d.Database 
-			fileComponent["t"] = d.table 
+			fileComponent["D"] = d.Database
+			fileComponent["t"] = d.table
 		}
 		needPaddingTags := [5]string{"d","H","i","m","s"}
 		for _, tag := range needPaddingTags {
@@ -528,6 +518,10 @@ Purge (delete) orphan rows from child table:
             os.Exit(1)
         }
     }
+
+    var srcDsn  dsn.Dsn
+    var dstDsn  dsn.Dsn
+
 
 
 }
