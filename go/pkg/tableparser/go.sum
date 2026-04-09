@@ -1,0 +1,4 @@
+github.com/y-trudeau/go-toolkit/go/pkg/debug v0.0.0-20250625155247-5604a5fa587c h1:yQnVnOgVOazod6YWP7rI6gwAoOZGhXQwpayczAI2Xdk=
+github.com/y-trudeau/go-toolkit/go/pkg/debug v0.0.0-20250625155247-5604a5fa587c/go.mod h1:Q7WEVJ0f4nq7J/QBgfRew5FweuZhdFDPcRTQckWxvtY=
+github.com/y-trudeau/go-toolkit/go/pkg/quoter v0.0.0-20260211214821-22492f9fa870 h1:cH1FAbnZrYxymM99NLxFDiBscaY4Wxrzt9KNHSxpB1c=
+github.com/y-trudeau/go-toolkit/go/pkg/quoter v0.0.0-20260211214821-22492f9fa870/go.mod h1:qjKC9nebHShMOKoLm6wbESE3AD27gciK1pvvy2+J7Sk=
