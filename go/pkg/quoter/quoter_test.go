@@ -1,74 +1,52 @@
-package quoter
+package quoter_test
 
 import (
-    "testing"
+	"testing"
 
-    "github.com/y-trudeau/go-toolkit/go/pkg/quoter"
+	"github.com/y-trudeau/go-toolkit/go/pkg/quoter"
 )
 
-func testBacktick(t *testing.T) {
-    {
-        // Empty array
-        v := [...]string{}
-        r := quoter.Backtick(v)
-        if r != "" {
-            t.Errorf("Failed to quote correctly and empty array '%v' into '%v'", v, r)
-        }
-    }
-    {
-        // simple quote
-        v := [...]string{"a"}
-        r := quoter.Backtick(v)
-        if r != "`a`" {
-            t.Errorf("Failed to quote correctly a simple value '%v' into '%v'", v, r)
-        }
-    }
-    {
-        // quote multi values
-        v := [...]string{"a", "b"}
-        r := quoter.Backtick(v)
-        if r != "`a`.`b`" {
-            t.Errorf("Failed to quote correctly two values '%v' into '%v'", v, r)
-        }
-    }
-    {
-        // already quoted 
-        v := [...]string{"`a`"}
-        r := quoter.Backtick(v)
-        if r != "```a```" {
-            t.Errorf("Failed to quote correctly an already quoted '%v' into '%v'", v, r)
-        }
-    }
-    {
-        // internal quote 
-        v := [...]string{"a`b"}
-        r := quoter.Backtick(v)
-        if r != "`a``b`" {
-            t.Errorf("Failed to quote correctly an internal quote '%v' into '%v'", v, r)
-        }
-    }
-    {
-        // values with internal spaces 
-        v := [...]string{"my db", "my tbl"}
-        r := quoter.Backtick(v)
-        if r != "`my db`.`my tbl`" {
-            t.Errorf("Failed to quote correctly values with spaces '%v' into '%v'", v, r)
-        }
-    }
+func TestBacktick(t *testing.T) {
+	{
+		// Empty slice
+		r := quoter.Backtick([]string{})
+		if r != "" {
+			t.Errorf("Empty slice: expected '', got '%v'", r)
+		}
+	}
+	{
+		// Single value
+		r := quoter.Backtick([]string{"a"})
+		if r != "`a`" {
+			t.Errorf("Single value: expected '`a`', got '%v'", r)
+		}
+	}
+	{
+		// Two values joined with dot
+		r := quoter.Backtick([]string{"a", "b"})
+		if r != "`a`.`b`" {
+			t.Errorf("Two values: expected '`a`.`b`', got '%v'", r)
+		}
+	}
+	{
+		// Already-backticked value: backtick inside is doubled
+		r := quoter.Backtick([]string{"`a`"})
+		if r != "```a```" {
+			t.Errorf("Already quoted: expected '```a```', got '%v'", r)
+		}
+	}
+	{
+		// Internal backtick is doubled
+		r := quoter.Backtick([]string{"a`b"})
+		if r != "`a``b`" {
+			t.Errorf("Internal quote: expected '`a``b`', got '%v'", r)
+		}
+	}
+	{
+		// Values with internal spaces
+		r := quoter.Backtick([]string{"my db", "my tbl"})
+		if r != "`my db`.`my tbl`" {
+			t.Errorf("Spaces: expected '`my db`.`my tbl`', got '%v'", r)
+		}
+	}
 }
-
-//func testQuoteval(t *testing.T) {
-//}
-
-//func testSplitunbacktick(t *testing.T) {
-//}
-
-//func testEscapelike(t *testing.T) {
-//}
-
-//func testSerializelist(t *testing.T) {
-//}
-
-//func testDeserializelist(t *testing.T) {
-//}
-

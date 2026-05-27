@@ -25,15 +25,13 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"strconv"
-    "strings"
 	"time"
 
 	"github.com/y-trudeau/go-toolkit/go/dsn"
-	"github.com/y-trudeau/go-toolkit/go/debug"
-	"github.com/y-trudeau/go-toolkit/go/quoter"
 )
 
 var bDebug = false
@@ -46,6 +44,7 @@ type Configuration struct {
 	BulkDelete      bool   // Delete each chunk with a single statement (implies --commit-each).
 	BulkDeleteLimit bool   // Add --limit to --bulk-delete statement
 	BulkInsert      bool   // Insert each chunk with LOAD DATA INFILE (implies --bulk-delete --commit-each).
+	Channel         string // Replication channel to use
 	CheckColumns    bool   // Ensure --source and --dest have same columns.
 	CheckTime       int    // If --check-slave-lag is given, this defines how long the tool pauses (in seconds) each time it discovers
 	// that a slave is lagging. This check is performed every 100 rows.
@@ -81,7 +80,7 @@ type Configuration struct {
 	Retries        int           // Number of retries per timeout or deadlock.
 	RunTime        time.Duration // Time to run before exiting in golang time.Duration format.
 	NoSafeAutoInc  bool          // Disable the auto-increment safety checks.
-	ExitSentinel   string        // Exit if the file exists.
+	StopSentinel   string        // Exit if the file exists.
 	PauseSentinel  string        // Pause if the file exists.
 	SlaveUser      string        // Sets the user to be used to connect to the slaves.
 	SlavePassword  string        // Sets the password to be used to connect to the slaves.
@@ -91,7 +90,7 @@ type Configuration struct {
 	SleepCoef      float64       // Calculate --sleep as a multiple of the last SELECT time
 	Source         string        // DSN specifying the table to archive from.
 	Statistics     bool          // Collect and print timing statistics.
-	Stop           bool          // Stop running instances by creating the exit sentinel file.
+	Stop           bool          // Stop running instances by creating the Stop sentinel file.
 	Pause          bool          // Pause running instances by creating the Pause sentinel file.
 	UnPause        bool          // Unpause running instances by removing the Pause sentinel file.
 	TxnSize        int           // Number of rows per transaction (default = 1).
@@ -114,11 +113,12 @@ func (config *Configuration) init() {
 	flag.BoolVar(&Config.BulkDelete, "bulk-delete", false, "Delete each chunk with a single statement (implies --commit-each).")
 	flag.BoolVar(&Config.BulkDeleteLimit, "bulk-delete-limit", true, "Add --limit to --bulk-delete statement")
 	flag.BoolVar(&Config.BulkInsert, "bulk-insert", false, "Insert each chunk with LOAD DATA INFILE (implies --bulk-delete --commit-each).")
+	flag.StringVar(&config.Channel, "channel", "", "Replication channel to monitor")
 	flag.BoolVar(&Config.CheckColumns, "check-columns", true, "Ensure --source and --dest have same columns.")
 	flag.IntVar(&Config.CheckTime, "check-interval", 1, `If --check-slave-lag is given, this defines how long the tool pauses (in seconds) each time it discovers
    that a slave is lagging. This check is performed every 100 rows.`)
 	flag.StringVar(&Config.CheckSlaveLag, "check-slave-lag", "", `Pause archiving until the specified DSN's slave lag is less than --max-lag.
-   Multiple DSN can be provided when seperated by ';'`) 
+   Multiple DSN can be provided when seperated by ';'`)
 	flag.StringVar(&Config.Columns, "columns", "", "Comma-separated list of columns to archive.")
 	flag.BoolVar(&Config.CommitEach, "commit-each", false, "Commit each set of fetched and archived rows (disables --txn-size).")
 	flag.StringVar(&Config.Dest, "dest", "", "DSN specifying the table to archive to.")
@@ -150,7 +150,7 @@ func (config *Configuration) init() {
 	flag.IntVar(&Config.Retries, "retry", 1, "Number of retries per timeout or deadlock.")
 	flag.DurationVar(&Config.RunTime, "run-time", defaultZeroTime, "Time to run before exiting in golang time.Duration format.")
 	flag.BoolVar(&Config.NoSafeAutoInc, "no-safe-auto-increment", false, "Disable the auto-increment safety checks.")
-	flag.StringVar(&Config.ExitSentinel, "exit-sentinel", "", "Exit if the file exists.")
+	flag.StringVar(&Config.StopSentinel, "stop-sentinel", "", "Stop if the file exists.")
 	flag.StringVar(&Config.PauseSentinel, "pause-sentinel", "", "Pause if the file exists.")
 	flag.StringVar(&Config.SlaveUser, "slave-user", "", "Sets the user to be used to connect to the slaves.")
 	flag.StringVar(&Config.SlavePassword, "slave-password", "", "Sets the password to be used to connect to the slaves.")
@@ -160,7 +160,7 @@ func (config *Configuration) init() {
 	flag.Float64Var(&Config.SleepCoef, "sleep-coef", 0.0, "Calculate --sleep as a multiple of the last SELECT time")
 	flag.StringVar(&Config.Source, "source", "", "DSN specifying the table to archive from.")
 	flag.BoolVar(&Config.Statistics, "statistics", false, "Collect and print timing statistics.")
-	flag.BoolVar(&Config.Exit, "exit", false, "Stop running instances by creating the exit sentinel file.")
+	flag.BoolVar(&Config.Stop, "stop", false, "Stop running instances by creating the exit sentinel file.")
 	flag.BoolVar(&Config.Pause, "pause", false, "Pause running instances by creating the pause sentinel file.")
 	flag.BoolVar(&Config.UnPause, "unpause", false, "Unpause running instances by removing the pause sentinel file.")
 	flag.IntVar(&Config.TxnSize, "txn-size", 1, "Number of rows per transaction (default = 1).")
@@ -178,6 +178,7 @@ func (config *Configuration) Print() {
 	fmt.Printf("bulk-delete is set to: %v\n", config.BulkDelete)
 	fmt.Printf("bulk-delete-limit is set to: %v\n", config.BulkDeleteLimit)
 	fmt.Printf("bulk-insert is set to: %v\n", config.BulkInsert)
+	fmt.Printf("channel is set to: %v\n", config.Channel)
 	fmt.Printf("check-columns is set to: %v\n", config.CheckColumns)
 	fmt.Printf("check-slave-lag is set to: '%v'\n", config.CheckSlaveLag)
 	fmt.Printf("check-time is set to: %v\n", config.CheckTime)
@@ -185,7 +186,7 @@ func (config *Configuration) Print() {
 	fmt.Printf("commit-each is set to: %v\n", config.CommitEach)
 	fmt.Printf("dest is set to: '%v'\n", config.Dest)
 	fmt.Printf("dry-run is set to: %v\n", config.DryRun)
-	fmt.Printf("exit-sentinel is set to: '%v'\n", config.ExitSentinel)
+	fmt.Printf("stop-sentinel is set to: '%v'\n", config.StopSentinel)
 	fmt.Printf("file is set to: '%v'\n", config.File)
 	fmt.Printf("for-update is set to: %v\n", config.ForUpdate)
 	fmt.Printf("header is set to: %v\n", config.Header)
@@ -252,15 +253,15 @@ func (config *Configuration) Validate() error {
 	// DSNs must have valid fields: source, dest, check-slaves
 	if len(config.Source) > 0 {
 		if dsn.Validate(config.Source) != nil {
-			return fmt.Errorf("Source is not a valid DSN: '%v'",config.Source)
+			return fmt.Errorf("Source is not a valid DSN: '%v'", config.Source)
 		}
-		d := Dsn{}
+		d := dsn.Dsn{}
 		d.Parse{config.Source}
-		if ! len(d.Table) > 0 {
-			return fmt.Errorf("Source DSN requires a 't' (table) element: '%v'",config.Source)
+		if !len(d.Table) > 0 {
+			return fmt.Errorf("Source DSN requires a 't' (table) element: '%v'", config.Source)
 		}
-		if ! len(d.Database) > 0 {
-			return fmt.Errorf("Source DSN requires a 'D' (table) element: '%v'",config.Source)
+		if !len(d.Database) > 0 {
+			return fmt.Errorf("Source DSN requires a 'D' (table) element: '%v'", config.Source)
 		}
 	} else {
 		return fmt.Errorf("'source' DSN must be set")
@@ -268,17 +269,17 @@ func (config *Configuration) Validate() error {
 
 	if len(config.Dest) > 0 {
 		if dsn.Validate(config.Dest) != nil {
-			return fmt.Errorf("Dest is not a valid DSN: '%v'",config.Dest)
+			return fmt.Errorf("Dest is not a valid DSN: '%v'", config.Dest)
 		}
 
 		if config.Dest == config.Source {
-			return fmt.Errorf("'source': '%v' and 'dest': '%v' DSNs are the identical, they must be different",config.Source, config.Dest)
+			return fmt.Errorf("'source': '%v' and 'dest': '%v' DSNs are the identical, they must be different", config.Source, config.Dest)
 		}
 	}
 
 	if len(config.CheckSlaveLag) > 0 {
 		if dsn.Validate(config.CheckSlaveLag) != nil {
-			return fmt.Errorf("CheckSlaveLag is not a valid DSN: '%v'",config.CheckSlaveLag)
+			return fmt.Errorf("CheckSlaveLag is not a valid DSN: '%v'", config.CheckSlaveLag)
 		}
 	}
 
@@ -291,7 +292,7 @@ func (config *Configuration) Validate() error {
 	if len(config.Where) == 0 {
 		return fmt.Errorf("'where' must be set")
 	}
-	
+
 	// integers all need to be positive (no negative values makes sense)
 	if config.CheckTime < 0 {
 		return fmt.Errorf("'check-time' must be zero or positive")
@@ -317,42 +318,41 @@ func (config *Configuration) Validate() error {
 	}
 
 	if config.BulkDelete && config.BulkDeleteLimit < 2 {
-        return fmt.Errorf("'bulk-delete' is meaningless with 'bulk-delete-limit 1'")
-    }
+		return fmt.Errorf("'bulk-delete' is meaningless with 'bulk-delete-limit 1'")
+	}
 
 	if config.Purge && config.NoDelete {
-        return fmt.Errorf("'purge' and 'no-delete' are mutualy exclusive")
-    }
+		return fmt.Errorf("'purge' and 'no-delete' are mutualy exclusive")
+	}
 
 	if config.BulkDelete && config.BulkInsert {
-        config.CommitEach = 1
-    }
+		config.CommitEach = false
+	}
 
 	// All good so nil
 	return nil
 }
-
 
 func (config *Configuration) Usage() error {
 
 	return nil
 }
 
-func GenStats(name string, f func()) {
-    if config.Statistics {
-        start := time.Now().UnixMilli()
-        cnt, ok := stats[name + "_count"]
-        if ok {
-            // Do something
-            stats[name + "_count"] = cnt + 1
-        } else {
-            stats[name + "_count"] = 1
-        }
-        f()
-        stats[name + "_time"] = (time.Now().UnixMilli() - start)
-    } else {
-        f()
-    }
+func GenStats(config *Configuration, name string, f func()) {
+	if config.Statistics {
+		start := time.Now().UnixMilli()
+		cnt, ok := stats[name+"_count"]
+		if ok {
+			// Do something
+			stats[name+"_count"] = cnt + 1
+		} else {
+			stats[name+"_count"] = 1
+		}
+		f()
+		stats[name+"_time"] = (time.Now().UnixMilli() - start)
+	} else {
+		f()
+	}
 }
 
 func main() {
@@ -415,21 +415,21 @@ Purge (delete) orphan rows from child table:
 		os.Exit(1)
 	}
 
-    // Initialize the Statistics Map
-    Statistics = make(map[string]int64)
+	// Initialize the Statistics Map
+	Statistics = make(map[string]int64)
 
 	// First things first: if --stop was given, create the exit sentinel file.
 	if Config.Stop && len(Config.ExitSentinel) > 0 {
 		_, err := os.Stat(Config.ExitSentinel)
 		if os.IsNotExist(err) {
-	        file, err := os.Create(Config.ExitSentinel)
+			file, err := os.Create(Config.ExitSentinel)
 			if err != nil {
-	            log.Fatal(err)
-	        }
-	        defer file.Close()
-			fmt.Printf("Successfully created exit sentinel file: '%v'\n",Config.ExitSentinel)
+				log.Fatal(err)
+			}
+			defer file.Close()
+			fmt.Printf("Successfully created exit sentinel file: '%v'\n", Config.ExitSentinel)
 		} else {
-			fmt.Printf("Exit sentinel file already exists: '%v'\n",Config.ExitSentinel)
+			fmt.Printf("Exit sentinel file already exists: '%v'\n", Config.ExitSentinel)
 			os.Exit(1)
 		}
 	}
@@ -438,14 +438,14 @@ Purge (delete) orphan rows from child table:
 	if Config.Pause && len(Config.PauseSentinel) > 0 {
 		_, err := os.Stat(Config.PauseSentinel)
 		if os.IsNotExist(err) {
-	        file, err := os.Create(Config.PauseSentinel)
+			file, err := os.Create(Config.PauseSentinel)
 			if err != nil {
-	            log.Fatal(err)
-	        }
-            defer file.Close()
-			fmt.Printf("Successfully created the pause sentinel file: '%v'\n",Config.PauseSentinel)
+				log.Fatal(err)
+			}
+			defer file.Close()
+			fmt.Printf("Successfully created the pause sentinel file: '%v'\n", Config.PauseSentinel)
 		} else {
-			fmt.Printf("Pause sentinel file already exists: '%v'\n",Config.PauseSentinel)
+			fmt.Printf("Pause sentinel file already exists: '%v'\n", Config.PauseSentinel)
 			os.Exit(1)
 		}
 	}
@@ -453,15 +453,15 @@ Purge (delete) orphan rows from child table:
 	// if --unpause was given, remove the pause sentinel file.
 	if Config.UnPause && len(Config.PauseSentinel) > 0 {
 		_, err := os.Stat(Config.PauseSentinel)
-		if ! os.IsNotExist(err) {
-	        err := os.Remove(Config.PauseSentinel)
+		if !os.IsNotExist(err) {
+			err := os.Remove(Config.PauseSentinel)
 			if err != nil {
-	            log.Fatal(err)
-	        }
-	        defer file.Close()
-			fmt.Printf("Successfully removed the pause sentinel file: '%v'\n",Config.PauseSentinel)
+				log.Fatal(err)
+			}
+			defer file.Close()
+			fmt.Printf("Successfully removed the pause sentinel file: '%v'\n", Config.PauseSentinel)
 		} else {
-			fmt.Printf("Pause sentinel file didn't already exists: '%v'\n",Config.PauseSentinel)
+			fmt.Printf("Pause sentinel file didn't already exists: '%v'\n", Config.PauseSentinel)
 			os.Exit(1)
 		}
 	}
@@ -470,12 +470,12 @@ Purge (delete) orphan rows from child table:
 	if len(Config.File) > 0 {
 		t := time.Now()
 		fileComponent := make(map[string]String)
-		fileComponent["d"] = strconv.Itoa(t.Day()) // Day on month
-		fileComponent["H"] = strconv.Itoa(t.Hour()) // Current hour
-		fileComponent["i"] = strconv.Itoa(t.Minute()) // Current minute
+		fileComponent["d"] = strconv.Itoa(t.Day())        // Day on month
+		fileComponent["H"] = strconv.Itoa(t.Hour())       // Current hour
+		fileComponent["i"] = strconv.Itoa(t.Minute())     // Current minute
 		fileComponent["m"] = strconv.Itoa(int(t.Month())) // Current month
-		fileComponent["s"] = strconv.Itoa(t.Second()) // Current second
-		fileComponent["Y"] = strconv.Itoa(t.Year()) // Current Year
+		fileComponent["s"] = strconv.Itoa(t.Second())     // Current second
+		fileComponent["Y"] = strconv.Itoa(t.Year())       // Current Year
 		fileComponent["D"] = ""
 		fileComponent["t"] = ""
 		if len(Config.Source) > 0 {
@@ -486,42 +486,43 @@ Purge (delete) orphan rows from child table:
 			fileComponent["D"] = d.Database
 			fileComponent["t"] = d.table
 		}
-		needPaddingTags := [5]string{"d","H","i","m","s"}
+		needPaddingTags := [5]string{"d", "H", "i", "m", "s"}
 		for _, tag := range needPaddingTags {
 			// if the len(fileComponent[tag]) is 1, need to prefix by '0'
-			if len(fileComponent[tag]) = 1 {
+			if len(fileComponent[tag]) == 1 {
 				fileComponent[tag] = "0" + fileComponent[tag]
 			}
 		}
-		replaceTags := [8]string{"d","H","i","m","s","Y","D","t"}
+		replaceTags := [8]string{"d", "H", "i", "m", "s", "Y", "D", "t"}
 		for _, tag := range replaceTags {
-			re := regexp.MustCompile("%"+tag)
-			re.ReplaceAllString(Config.File,fileComponent[tag])
+			re := regexp.MustCompile("%" + tag)
+			re.ReplaceAllString(Config.File, fileComponent[tag])
 		}
 	}
 
-    // Could add Daemonize/forking option but not really needed (TODO)
+	// Could add Daemonize/forking option but not really needed (TODO)
 
-    // Check if --pid is set and if it exists
-    if len(Config.Pid) > 0 {
-        _, err := os.Stat(Config.Pid)
-        if os.IsNotExist(err) {
-            file, err := os.Create(Config.Pid)
-            if err != nil {
-                log.Fatal(err)
-            }
-            defer file.Close()
-            p := os.Getpid()
-            n3, err := file.WriteString(fmt.Sprintf("%s\n",p))
-        } else {
-            fmt.Printf("Pid file exists: '%v'\n",Config.Pid)
-            os.Exit(1)
-        }
-    }
+	// Check if --pid is set and if it exists
+	if len(Config.Pid) > 0 {
+		_, err := os.Stat(Config.Pid)
+		if os.IsNotExist(err) {
+			file, err := os.Create(Config.Pid)
+			if err != nil {
+				log.Fatal(err)
+			}
+			p := os.Getpid()
+			n3, err := file.WriteString(fmt.Sprintf("%s\n", p))
+			defer func() {
+				file.Close()
+				os.Remove(Config.Pid)
+			}()
+		} else {
+			fmt.Printf("Pid file exists: '%v'\n", Config.Pid)
+			os.Exit(1)
+		}
+	}
 
-    var srcDsn  dsn.Dsn
-    var dstDsn  dsn.Dsn
-
-
+	var srcDsn dsn.Dsn
+	var dstDsn dsn.Dsn
 
 }

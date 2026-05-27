@@ -38,6 +38,7 @@ type KeyColInfo struct {
     name   string
     prefix int
     colddl string
+    pos    int // 1-based position within the index
 }
 
 type KeyInfo struct {
@@ -233,7 +234,7 @@ func parseIndexColumns(cols string) map[string]KeyColInfo {
     // Separate the column from the prefix
     recolpref := regexp.MustCompile("(`[^(]*)(?:\\(([0-9]*)\\))?")
 
-    for _, value := range el {
+    for i, value := range el {
         matches := recolpref.FindAllStringSubmatch(value, -1)
         kci := new(KeyColInfo)
         // Remove leading and trailing backtick
@@ -250,6 +251,7 @@ func parseIndexColumns(cols string) map[string]KeyColInfo {
         }
 
         kci.colddl = value
+        kci.pos = i + 1
 
         kcimap[kci.name] = *kci
     }
@@ -455,6 +457,64 @@ func GetFks(ddl string) map[string]FkInfo {
 }
 
 //ignoring func remove_auto_increment has it doesn't seem to be used
+
+// GetCols returns column names in table definition order (sorted by ColInfo.pos).
+func (tbl TableInfo) GetCols() []string {
+    cols := make([]string, len(tbl.cols))
+    for _, ci := range tbl.cols {
+        cols[ci.pos-1] = ci.name
+    }
+    return cols
+}
+
+// ColNullable returns whether the named column allows NULL.
+func (tbl TableInfo) ColNullable(col string) bool {
+    if ci, ok := tbl.cols[col]; ok {
+        return ci.nullable
+    }
+    return false
+}
+
+// ColType returns the MySQL data type string of the named column (e.g. "enum", "int").
+func (tbl TableInfo) ColType(col string) string {
+    if ci, ok := tbl.cols[col]; ok {
+        return ci.dataType
+    }
+    return ""
+}
+
+// ColExists returns whether the named column exists in the table.
+func (tbl TableInfo) ColExists(col string) bool {
+    _, ok := tbl.cols[col]
+    return ok
+}
+
+// KeyExists returns whether the named index exists in the table.
+func (tbl TableInfo) KeyExists(key string) bool {
+    _, ok := tbl.keys[key]
+    return ok
+}
+
+// KeyIsUnique returns whether the named index has a unique or primary constraint.
+func (tbl TableInfo) KeyIsUnique(key string) bool {
+    if ki, ok := tbl.keys[key]; ok {
+        return ki.unique
+    }
+    return false
+}
+
+// KeyCols returns index column names in index definition order (by KeyColInfo.pos).
+func (tbl TableInfo) KeyCols(key string) []string {
+    ki, ok := tbl.keys[key]
+    if !ok {
+        return nil
+    }
+    cols := make([]string, len(ki.cols))
+    for _, kci := range ki.cols {
+        cols[kci.pos-1] = kci.name
+    }
+    return cols
+}
 
 // Returns table status info from db with optional like
 func Gettablestatus(dbh *sql.DB, db string, like string) ([]TableStatusInfo, error) {

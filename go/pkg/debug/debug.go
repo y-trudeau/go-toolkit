@@ -24,6 +24,7 @@ package debug
 import (
     "fmt"
     "os"
+    "strings"
 )
 
 func isdebug() bool {
@@ -33,12 +34,33 @@ func isdebug() bool {
         return false
     }
 }
+
 // Print a string message and a variable of any type
 func Printvar(msg string, variable any) {
     if ! isdebug() {
         return
     }
     fmt.Fprintf(os.Stderr,"%s: %v\n",msg, variable)
+}
+
+// Print a string message and a string array
+func PrintArray(msg string, strArray []string, separator string) {
+    if ! isdebug() {
+        return
+    }
+    fmt.Fprintf(os.Stderr,"%s: %s\n",msg, strings.Join(strArray,separator))
+}
+
+// Print a string message and an int array
+func PrintArrayInt(msg string, intArray []int, separator string) {
+    if ! isdebug() {
+        return
+    }
+    strArray := make([]string, len(intArray))
+    for i, num := range intArray {
+        strArray[i] = fmt.Sprintf("%d", num)
+    }
+    fmt.Fprintf(os.Stderr,"%s: %s\n",msg, strings.Join(strArray,separator))
 }
 
 // Print a string message
